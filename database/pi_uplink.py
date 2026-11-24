@@ -3,7 +3,7 @@
 
 ESP32 line: {"temp":28.4,"hum":61.0,"gas":1200,"light":900,"dist":35.2}
 
-Env:  DEVICE_TOKEN (required), UPLINK_URL (e.g. https://iot.example.com/write),
+Env:  DEVICE_TOKEN (required), UPLINK_URL (e.g. https://<machine>.<tailnet>.ts.net/write),
       DEVICE_ID (default pi5-01), SERIAL_PORT (default /dev/serial0, or /dev/ttyAMA0)
 Needs: pip install pyserial requests
 Merge send() into your monitor.py if you prefer one script.

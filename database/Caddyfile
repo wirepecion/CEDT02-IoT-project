@@ -1,10 +1,19 @@
-# Public HTTPS ingest gateway for IoT devices (needs a domain pointing at this server).
+# Token-checking ingest gateway for IoT devices. Plain HTTP on localhost only:
+# HTTPS is terminated by Tailscale Funnel in front of it (`tailscale funnel 8080`),
+# so no domain or Let's Encrypt is needed. Devices POST to https://<machine>.<tailnet>.ts.net/write
 # Env vars come from .env:  set -a; . ./.env; set +a; caddy run --config Caddyfile
-#   DOMAIN      e.g. iot.example.com
 #   TOKEN_PI5   token for the Raspberry Pi 5
 #   TOKEN_TEST  token for sender.py test runs (delete the matcher when done)
-# Device sends: POST https://<DOMAIN>/write  with header "Authorization: Bearer <token>"
-{$DOMAIN} {
+# Device sends: POST https://<machine>.<tailnet>.ts.net/write  with header "Authorization: Bearer <token>"
+{
+	auto_https off
+}
+
+# `:8080` (no host) matches any Host header; Funnel forwards the *.ts.net name,
+# and a host-specific address would silently fall through to an empty 200.
+http://:8080 {
+	bind 127.0.0.1
+
 	request_body {
 		max_size 64KB
 	}

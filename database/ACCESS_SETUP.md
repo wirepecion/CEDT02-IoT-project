@@ -9,12 +9,13 @@ Stack: QuestDB (matches the `Caddyfile`). Files already edited for this setup:
 - The friend reaches the DB over Tailscale only.
 - Devices write only through the Caddy HTTPS gateway, one token per device.
 
-**Two values you must fill in** (in `.env`):
+**One value you must fill in** (in `.env`):
 
 | Variable | What | How to get it |
 |---|---|---|
 | `TAILSCALE_IP` | Server's Tailscale IP, e.g. `100.x.y.z` | `tailscale ip -4` on the server |
-| `DOMAIN` | e.g. `iot.example.com` | Your domain, pointing at the server |
+
+The public device URL is `https://<machine>.<tailnet>.ts.net/write` (shown by `tailscale funnel status`). No domain is needed.
 
 ---
 
@@ -24,7 +25,7 @@ Stack: QuestDB (matches the `Caddyfile`). Files already edited for this setup:
 
 - Linux machine that stays on, with Docker and Docker Compose
 - Free Tailscale account
-- Domain name (or Cloudflare Tunnel / Tailscale Funnel if behind home NAT)
+- Tailscale HTTPS certificates and Funnel enabled (admin console: DNS > HTTPS Certificates; Access controls > Funnel)
 - Caddy installed (`sudo apt install caddy`, or use the `caddy:2` Docker image)
 
 ### Step 1: Install Tailscale
@@ -35,7 +36,7 @@ sudo tailscale up
 tailscale ip -4
 ```
 
-Put the printed IP into `.env` as `TAILSCALE_IP=...`. Put your domain in as `DOMAIN=...`.
+Put the printed IP into `.env` as `TAILSCALE_IP=...`.
 
 ### Step 2: Start QuestDB
 
@@ -59,12 +60,15 @@ Open http://localhost:9000 and paste the QuestDB block from `schema.sql`. It alr
 
 ### Step 4: Start the HTTPS gateway
 
-Open ports 80 and 443 on the server and point `DOMAIN` at it. Then:
+Caddy listens on `127.0.0.1:8080` (any Host header) (plain HTTP, token check only). Tailscale Funnel adds the public HTTPS in front of it. No open ports or domain needed.
 
 ```bash
 set -a; . ./.env; set +a
-caddy run --config Caddyfile
+sudo -E caddy run --config Caddyfile     # the snap build insists on root
+tailscale funnel --bg 8080               # in another terminal; prints your https://...ts.net URL
 ```
+
+If you installed Caddy as a service, put the `Caddyfile` in its config path instead and make sure `TOKEN_PI5` and `TOKEN_TEST` are in its environment.
 
 Each device has its own token in `.env` (`TOKEN_PI5`, `TOKEN_TEST`). To add a device, add a `TOKEN_<NAME>` line and one `@name header ...` + `reverse_proxy @name ...` pair in the `Caddyfile`.
 
@@ -73,13 +77,13 @@ Each device has its own token in `.env` (`TOKEN_PI5`, `TOKEN_TEST`). To add a de
 No token, expect `401`:
 
 ```bash
-curl -i -X POST https://<DOMAIN>/write -d 'x a=1'
+curl -i -X POST https://<FUNNEL_HOST>/write -d 'x a=1'
 ```
 
 With a token, expect `204`:
 
 ```bash
-curl -i -X POST https://<DOMAIN>/write \
+curl -i -X POST https://<FUNNEL_HOST>/write \
   -H "Authorization: Bearer <TOKEN_TEST>" \
   --data-binary 'sensor_readings,device_id=test temperature=25,humidity=50'
 ```
@@ -135,12 +139,12 @@ SELECT device_id, count(), avg(temperature) FROM sensor_readings GROUP BY device
 - Pi 5 with Raspberry Pi OS, on WiFi or Ethernet
 - ESP32 wired over UART as in `ESP32-S3_Pi5_guide.md`
 - Copy `pi_uplink.py` to the Pi
-- The Pi's token (`TOKEN_PI5` from `.env`) and the URL `https://<DOMAIN>/write`
+- The Pi's token (`TOKEN_PI5` from `.env`) and the URL `https://<FUNNEL_HOST>/write` (`<FUNNEL_HOST>` is your `*.ts.net` name)
 
 ### Step 1: Test the connection from the Pi
 
 ```bash
-curl -i -X POST https://<DOMAIN>/write \
+curl -i -X POST https://<FUNNEL_HOST>/write \
   -H "Authorization: Bearer <TOKEN_PI5>" \
   --data-binary 'sensor_readings,device_id=pi5-01 temperature=28.4,humidity=61'
 ```
@@ -159,7 +163,7 @@ Create `/etc/default/pi-uplink` (then `sudo chmod 600` it):
 
 ```bash
 DEVICE_TOKEN=<TOKEN_PI5>
-UPLINK_URL=https://<DOMAIN>/write
+UPLINK_URL=https://<FUNNEL_HOST>/write
 DEVICE_ID=pi5-01
 SERIAL_PORT=/dev/serial0
 ```
@@ -213,7 +217,7 @@ The ESP32 only talks to the Pi over UART, so it needs no token.
 
 ## Checklist before sharing
 
-- [ ] `TAILSCALE_IP` and `DOMAIN` filled in `.env`
+- [ ] `TAILSCALE_IP` filled in `.env`
 - [ ] `docker compose up -d questdb` ran, default `admin/quest` login no longer works
 - [ ] `401` without a token, `204` with a token
 - [ ] Only ports 80 and 443 open to the internet; DB ports on localhost or the Tailscale IP only
