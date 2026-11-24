@@ -1,0 +1,12 @@
+# Secrets
+.env
+*.env
+!.env.example
+
+# Docker volume data (root-owned DB files)
+data/
+
+# Python
+__pycache__/
+*.pyc
+.venv/

@@ -1,0 +1,59 @@
+# Time-series DB pilot stack: TimescaleDB, QuestDB, GreptimeDB
+# Usage:
+#   export TS_PASSWORD='choose-a-strong-password'
+#   docker compose up -d timescaledb     # or questdb / greptimedb / (no name = all)
+#   docker compose ps
+#   docker compose down                  # stop (data kept in ./data)
+# All ports are bound to 127.0.0.1 only. Use an SSH tunnel or reverse proxy to share.
+# For the pilot, pin image tags to the exact versions you tested.
+
+services:
+  timescaledb:
+    image: timescale/timescaledb:latest-pg17
+    container_name: tsdb
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${TS_PASSWORD:?set TS_PASSWORD first}
+      POSTGRES_DB: pilot
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - ./data/timescale:/var/lib/postgresql/data
+
+  questdb:
+    image: questdb/questdb:10.2.0   # version currently running in the pilot
+    container_name: questdb
+    restart: unless-stopped
+    environment:
+      # Replaces the default admin/quest login. Friend uses this over Tailscale.
+      QDB_PG_USER: friend_admin
+      QDB_PG_PASSWORD: ${QDB_PASSWORD:?set QDB_PASSWORD (see .env)}
+    ports:
+      # 127.0.0.1 = this machine + Caddy gateway. TAILSCALE_IP (in .env) = friend over Tailscale.
+      # If TAILSCALE_IP is empty, the second line just binds localhost again.
+      - "127.0.0.1:9000:9000"   # web console + REST + ILP over HTTP
+      - "127.0.0.1:8812:8812"   # PostgreSQL wire protocol
+      - "127.0.0.1:9009:9009"   # ILP over TCP (never share)
+      - "${TAILSCALE_IP:-127.0.0.2}:9000:9000"   # friend: web console
+      - "${TAILSCALE_IP:-127.0.0.2}:8812:8812"   # friend: SQL
+    volumes:
+      - ./data/questdb:/var/lib/questdb
+
+  greptimedb:
+    image: greptime/greptimedb:latest
+    container_name: greptimedb
+    restart: unless-stopped
+    command:
+      - standalone
+      - start
+      - --http-addr=0.0.0.0:4000
+      - --rpc-bind-addr=0.0.0.0:4001
+      - --mysql-addr=0.0.0.0:4002
+      - --postgres-addr=0.0.0.0:4003
+    ports:
+      - "127.0.0.1:4000:4000"   # HTTP API + dashboard
+      - "127.0.0.1:4001:4001"   # gRPC
+      - "127.0.0.1:4002:4002"   # MySQL protocol
+      - "127.0.0.1:4003:4003"   # PostgreSQL protocol
+    volumes:
+      - ./data/greptime:/greptimedb_data

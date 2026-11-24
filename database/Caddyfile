@@ -1,0 +1,26 @@
+# Public HTTPS ingest gateway for IoT devices (needs a domain pointing at this server).
+# Env vars come from .env:  set -a; . ./.env; set +a; caddy run --config Caddyfile
+#   DOMAIN      e.g. iot.example.com
+#   TOKEN_PI5   token for the Raspberry Pi 5
+#   TOKEN_TEST  token for sender.py test runs (delete the matcher when done)
+# Device sends: POST https://<DOMAIN>/write  with header "Authorization: Bearer <token>"
+{$DOMAIN} {
+	request_body {
+		max_size 64KB
+	}
+
+	# `route` keeps these lines in the order written, so the 401 only fires
+	# when no token matched (plain `respond` would be reordered before reverse_proxy).
+	route /write* {
+		@pi5 header Authorization "Bearer {env.TOKEN_PI5}"
+		reverse_proxy @pi5 localhost:9000
+
+		@test header Authorization "Bearer {env.TOKEN_TEST}"
+		reverse_proxy @test localhost:9000
+
+		respond 401
+	}
+
+	# Everything else (including the DB consoles) is not exposed
+	respond 404
+}
